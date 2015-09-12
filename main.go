@@ -27,7 +27,7 @@ func main() {
 	flag.Parse()
 	go MyHub.run()
 	http.HandleFunc("/", serveHome)
-	//http.HandleFunc("/ws", serveWs)
+	http.HandleFunc("/ws", serveWs)
 	err := http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
