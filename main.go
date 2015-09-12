@@ -28,7 +28,7 @@ func main() {
 	//go h.run()
 	http.HandleFunc("/", serveHome)
 	//http.HandleFunc("/ws", serveWs)
-	err := http.ListenAndServe(":"+os.GetEnv("PORT"), nil)
+	err := http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
