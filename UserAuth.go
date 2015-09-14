@@ -6,7 +6,8 @@ import (
 	"github.com/gorilla/mux"
 	"fmt"
 	"log"
-	"crypto/rand"
+	
+	"utils"
 )
 
 type User struct {
@@ -38,26 +39,46 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row := MyDB.connection.QueryRow("select id from users where username=$1 and passwordhash=$2",
-                             		username, password)
+	row := MyDB.connection.QueryRow(`select id, passwordhash, passwordsalt, isdisabled
+                                     from users where username=$1`,
+                             		 username)
 
 	var user_id int
+	var passwordhash string
+	var passwordsalt string
+	var isdisabled bool
 
-	err := row.Scan(&user_id)
+	err := row.Scan(&user_id, &passwordhash, &passwordsalt, &isdisabled)
 	if err != nil {
 		log.Print("Unknown login or password for ", username)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	log.Printf("user_id = %d", user_id)
-	b := make([]byte, 24)
-	rand.Read(b)
-	session_id := fmt.Sprintf("%x", b)
-	
-	_, err = MyDB.connection.Query("insert into usersessions(sessionkey, user_id) values($1,$2)",
-		                         session_id, user_id)
+	if isdisabled {
+		log.Printf("Username %s is disabled", username)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
+	calculated_passwordhash := utils.SHA1(passwordsalt + password)
+
+	if calculated_passwordhash != passwordhash {
+		log.Printf("Invalid password")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	// creating session
+	session_id := utils.RandomSHA1()
+	for tries := 0; tries < 3; tries++ {
+		_, err = MyDB.connection.Exec("insert into usersessions(sessionkey, user_id) values($1,$2)",
+			session_id, user_id)
+
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		panic(err)
 	}
@@ -66,5 +87,19 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	c := http.Cookie { Name: "sessionId", Value: session_id }
 	http.SetCookie(w, &c)
 
-	log.Printf("Login successful for user:%s", username)
+	log.Printf("Login successful for user:%s user_id:%d", username, user_id)
+}
+
+// log the user's session out of the system, do not check if the session is valid
+func UserAuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Add("Content-Type", "text/html")
+	vars := mux.Vars(r)
+	
+	session_id := vars["session_id"]
+	log.Print("logging out ", session_id)
+
+	_, err := MyDB.connection.Exec("delete from usersessions where sessionkey = $1", session_id)
+	if err != nil {
+		panic(err)
+	}
 }

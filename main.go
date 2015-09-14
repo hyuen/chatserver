@@ -35,7 +35,8 @@ type Route struct {
 type Routes []Route
 
 var routes = Routes {
-	Route{ "login", "GET", "/auth/login", UserAuthLoginHandler },
+	Route{ "login",  "GET", "/auth/login", UserAuthLoginHandler },
+	Route{ "logout", "GET", "/auth/logout/{session_id}", UserAuthLogoutHandler },
 }
 
 func main() {
