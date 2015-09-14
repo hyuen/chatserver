@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"time"
 	"github.com/gorilla/mux"
-	"fmt"
+	"github.com/gorilla/schema"
 	"log"
+	"encoding/json"
 	
 	"utils"
 )
@@ -23,22 +24,11 @@ type UserSession struct {
  LoginTime    time.Time
 }
 
-func AuthHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Add("Content-Type", "text/html")
-	vars := mux.Vars(r)
-	fmt.Fprintf(w, "authing %s", vars["operation"])
-	
+type ErrorMsg struct {
+	Msg   string
 }
 
-// See if user is in the system, if yes assign a session ID to him
-func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Add("Content-Type", "text/html")
-	username, password, ok := r.BasicAuth()
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
+func UserAuth(username string, password string) (int, string, bool) {
 	row := MyDB.connection.QueryRow(`select id, passwordhash, passwordsalt, isdisabled
                                      from users where username=$1`,
                              		 username)
@@ -51,26 +41,43 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := row.Scan(&user_id, &passwordhash, &passwordsalt, &isdisabled)
 	if err != nil {
 		log.Print("Unknown login or password for ", username)
-		w.WriteHeader(http.StatusUnauthorized)
-		return
+		return -1, "", false
 	}
 
 	if isdisabled {
 		log.Printf("Username %s is disabled", username)
+		return -1, "", false
+	}
+	
+	calculated_passwordhash := utils.SHA1(passwordsalt + password)
+	//log.Printf("calculated hash %s", calculated_passwordhash)
+	
+	if calculated_passwordhash != passwordhash {
+		log.Printf("Invalid password")
+		return -1, "", false
+	}
+	
+	return user_id, passwordsalt, true
+}
+
+// See if user is in the system, if yes assign a session ID to him
+func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+	username, password, ok := r.BasicAuth()
+	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	calculated_passwordhash := utils.SHA1(passwordsalt + password)
-
-	if calculated_passwordhash != passwordhash {
-		log.Printf("Invalid password")
+	user_id, _, ok := UserAuth(username, password)
+	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	// creating session
 	session_id := utils.RandomSHA1()
+	var err error
 	for tries := 0; tries < 3; tries++ {
 		_, err = MyDB.connection.Exec("insert into usersessions(sessionkey, user_id) values($1,$2)",
 			session_id, user_id)
@@ -92,7 +99,7 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 // log the user's session out of the system, do not check if the session is valid
 func UserAuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Add("Content-Type", "text/html")
+    w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
 	
 	session_id := vars["session_id"]
@@ -102,4 +109,71 @@ func UserAuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+type PasswordChangeForm struct {
+	New_password string
+}
+
+func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	
+	user_id, salt, ok := UserAuth(username, password)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		panic(err)
+		return
+	}
+
+	decoder := schema.NewDecoder()
+	passwordchange_form := new(PasswordChangeForm)
+	err = decoder.Decode(passwordchange_form, r.PostForm)
+		
+	if err != nil || passwordchange_form.New_password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	newpassword := passwordchange_form.New_password
+
+	if newpassword == password {
+		errmsg := ErrorMsg { Msg: "The new password cannot be the same as the current one" }
+		str, _ := json.Marshal(errmsg)
+		w.Write(str)
+		return
+	}
+
+	newpasswordhash :=  utils.SHA1(salt + newpassword)
+	
+	// update password
+	_, err = MyDB.connection.Exec("UPDATE users SET passwordhash=$1 where id=$2",
+		                          newpasswordhash, user_id)
+	if err != nil {
+		panic(err)
+	}
+	
+	// expire all sessions
+	_, err = MyDB.connection.Exec("DELETE FROM usersessions WHERE user_id=$1",
+			                      user_id)
+	if err != nil {
+		panic(err)
+	}
+}
+
+
+func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+	//vars := mux.Vars(r)
+
 }
