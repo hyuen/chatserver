@@ -24,6 +24,10 @@ type UserSession struct {
  LoginTime    time.Time
 }
 
+const (
+	AUTH_SALT = "sydrtvgh"
+)
+
 type ErrorMsg struct {
 	Msg   string
 }
@@ -162,7 +166,7 @@ func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	
+
 	// expire all sessions
 	_, err = MyDB.connection.Exec("DELETE FROM usersessions WHERE user_id=$1",
 			                      user_id)
@@ -171,9 +175,56 @@ func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type SignupForm struct {
+	Username string
+	Password string
+	// Telephone
+}
+
+func (form *SignupForm) validate() bool {
+	if form.Username == "" || form.Password == "" {
+		return false
+	}
+	return true
+}
 
 func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
-	//vars := mux.Vars(r)
 
+	err := r.ParseForm()
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		panic(err)
+		return
+	}
+	decoder := schema.NewDecoder()
+	signup_form := new(SignupForm)
+	err = decoder.Decode(signup_form, r.PostForm)
+
+	if err != nil || !signup_form.validate()  {
+		//log.Print(err, signup_form, signup_form.Username)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// check if user exists
+	var id int
+	err = MyDB.connection.QueryRow("SELECT 1 FROM users WHERE username = $1",
+                        		signup_form.Username).Scan(&id)
+
+	if err == nil {
+		log.Print("User ", signup_form.Username, " already exists")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	
+	passwordhash := utils.SHA1(AUTH_SALT + signup_form.Password)
+	_, err = MyDB.connection.Exec(`INSERT INTO 
+                                    users(username, passwordhash, passwordsalt)
+                                    VALUES($1,$2,$3)`,
+		                            signup_form.Username, passwordhash, AUTH_SALT)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("Created user %s", signup_form.Username)
 }
