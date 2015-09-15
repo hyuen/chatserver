@@ -1,90 +1,91 @@
 package main
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"time"
+
 	"github.com/gorilla/mux"
 	"github.com/gorilla/schema"
-	"log"
-	"encoding/json"
 
 	"utils"
 )
 
 type User struct {
- ID           int
- Username     string
- PasswordHash string
- PasswordSalt string
- IsDisabled   bool
+	ID           int
+	Username     string
+	PasswordHash string
+	PasswordSalt string
+	IsDisabled   bool
 }
 
 type UserSession struct {
- SessionKey   string
- LoginTime    time.Time
+	SessionKey string
+	LoginTime  time.Time
 }
 
 const (
-	AUTH_SALT = "sydrtvgh"
+	AuthSalt = "sydrtvgh"
 )
 
 type ErrorMsg struct {
-	Msg   string
+	Msg string
 }
 
 func UserAuth(username string, password string) (int, string, bool) {
 	row := MyDB.connection.QueryRow(`select id, passwordhash, passwordsalt, isdisabled
                                      from users where username=$1`,
-                             		 username)
+		username)
 
-	var user_id int
-	var passwordhash string
-	var passwordsalt string
-	var isdisabled bool
+	var userID int
+	var passwordHash string
+	var passwordSalt string
+	var isDisabled bool
 
-	err := row.Scan(&user_id, &passwordhash, &passwordsalt, &isdisabled)
+	err := row.Scan(&userID, &passwordHash, &passwordSalt, &isDisabled)
 	if err != nil {
 		log.Print("Unknown login or password for ", username)
 		return -1, "", false
 	}
 
-	if isdisabled {
+	if isDisabled {
 		log.Printf("Username %s is disabled", username)
 		return -1, "", false
 	}
 
-	calculated_passwordhash := utils.SHA1(passwordsalt + password)
+	calculatedPasswordHash := utils.SHA1(passwordSalt + password)
 	//log.Printf("calculated hash %s", calculated_passwordhash)
 
-	if calculated_passwordhash != passwordhash {
+	if calculatedPasswordHash != passwordHash {
 		log.Printf("Invalid password")
 		return -1, "", false
 	}
 
-	return user_id, passwordsalt, true
+	return userID, passwordSalt, true
 }
 
 // See if user is in the system, if yes assign a session ID to him
 func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	username, password, ok := r.BasicAuth()
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	user_id, _, ok := UserAuth(username, password)
+	userID, _, ok := UserAuth(username, password)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	// creating session
-	session_id := utils.RandomSHA1()
+	sessionID := utils.RandomSHA1()
 	var err error
 	for tries := 0; tries < 3; tries++ {
 		_, err = MyDB.connection.Exec("insert into usersessions(sessionkey, user_id) values($1,$2)",
-			session_id, user_id)
+			sessionID, userID)
 
 		if err == nil {
 			break
@@ -95,21 +96,21 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set output
-	c := http.Cookie { Name: "sessionId", Value: session_id }
+	c := http.Cookie{Name: "sessionId", Value: sessionID}
 	http.SetCookie(w, &c)
 
-	log.Printf("Login successful for user:%s user_id:%d", username, user_id)
+	log.Printf("Login successful for user:%s user_id:%d", username, userID)
 }
 
 // log the user's session out of the system, do not check if the session is valid
 func UserAuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
 
-	session_id := vars["session_id"]
-	log.Print("logging out ", session_id)
+	sessionID := vars["session_id"]
+	log.Print("logging out ", sessionID)
 
-	_, err := MyDB.connection.Exec("delete from usersessions where sessionkey = $1", session_id)
+	_, err := MyDB.connection.Exec("delete from usersessions where sessionkey = $1", sessionID)
 	if err != nil {
 		panic(err)
 	}
@@ -120,14 +121,14 @@ type PasswordChangeForm struct {
 }
 
 func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	username, password, ok := r.BasicAuth()
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	user_id, salt, ok := UserAuth(username, password)
+	userID, salt, ok := UserAuth(username, password)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -151,24 +152,24 @@ func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
 	newpassword := passwordchange_form.New_password
 
 	if newpassword == password {
-		errmsg := ErrorMsg { Msg: "The new password cannot be the same as the current one" }
+		errmsg := ErrorMsg{Msg: "The new password cannot be the same as the current one"}
 		str, _ := json.Marshal(errmsg)
 		w.Write(str)
 		return
 	}
 
-	newpasswordhash :=  utils.SHA1(salt + newpassword)
+	newpasswordhash := utils.SHA1(salt + newpassword)
 
 	// update password
 	_, err = MyDB.connection.Exec("UPDATE users SET passwordhash=$1 where id=$2",
-		                          newpasswordhash, user_id)
+		newpasswordhash, userID)
 	if err != nil {
 		panic(err)
 	}
 
 	// expire all sessions
 	_, err = MyDB.connection.Exec("DELETE FROM usersessions WHERE user_id=$1",
-			                      user_id)
+		userID)
 	if err != nil {
 		panic(err)
 	}
@@ -188,7 +189,7 @@ func (form *SignupForm) validate() bool {
 }
 
 func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 
 	err := r.ParseForm()
 	if err != nil {
@@ -197,10 +198,10 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decoder := schema.NewDecoder()
-	signup_form := new(SignupForm)
-	err = decoder.Decode(signup_form, r.PostForm)
+	signupForm := new(SignupForm)
+	err = decoder.Decode(signupForm, r.PostForm)
 
-	if err != nil || !signup_form.validate()  {
+	if err != nil || !signupForm.validate() {
 		//log.Print(err, signup_form, signup_form.Username)
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -209,21 +210,27 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 	// check if user exists
 	var id int
 	err = MyDB.connection.QueryRow("SELECT 1 FROM users WHERE username = $1",
-                        		signup_form.Username).Scan(&id)
+		signupForm.Username).Scan(&id)
 
 	if err == nil {
-		log.Print("User ", signup_form.Username, " already exists")
+		log.Print("User ", signupForm.Username, " already exists")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	passwordhash := utils.SHA1(AUTH_SALT + signup_form.Password)
+	passwordhash := utils.SHA1(AuthSalt + signupForm.Password)
 	_, err = MyDB.connection.Exec(`INSERT INTO
                                     users(username, passwordhash, passwordsalt)
                                     VALUES($1,$2,$3)`,
-		                            signup_form.Username, passwordhash, AUTH_SALT)
+		signupForm.Username, passwordhash, AuthSalt)
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("Created user %s", signup_form.Username)
+	log.Printf("Created user %s", signupForm.Username)
+}
+
+func SessionRequired(f http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		f(w, r)
+	}
 }
