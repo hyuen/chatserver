@@ -45,13 +45,13 @@ var routes = Routes {
 func main() {
 	flag.Parse()
 
-	router := mux.NewRouter().StrictSlash(true)	
+	router := mux.NewRouter().StrictSlash(true)
 	go MyHub.run()
 	go MyDB.connect()
-	
+
 	router.HandleFunc("/", serveHome)
 	router.HandleFunc("/ws", serveWs)
-	
+
 	for _, route := range routes {
         router.
             Methods(route.Method).

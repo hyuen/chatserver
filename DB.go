@@ -20,7 +20,7 @@ type DB struct {
 func (db *DB) connect() {
 	dbinfo := fmt.Sprintf("user=%s dbname=%s sslmode=disable",
         DB_USER, DB_NAME)
-	
+
 	var err error
 
 	db.connection, err = sql.Open("postgres", dbinfo)

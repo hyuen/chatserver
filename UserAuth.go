@@ -7,7 +7,7 @@ import (
 	"github.com/gorilla/schema"
 	"log"
 	"encoding/json"
-	
+
 	"utils"
 )
 
@@ -52,15 +52,15 @@ func UserAuth(username string, password string) (int, string, bool) {
 		log.Printf("Username %s is disabled", username)
 		return -1, "", false
 	}
-	
+
 	calculated_passwordhash := utils.SHA1(passwordsalt + password)
 	//log.Printf("calculated hash %s", calculated_passwordhash)
-	
+
 	if calculated_passwordhash != passwordhash {
 		log.Printf("Invalid password")
 		return -1, "", false
 	}
-	
+
 	return user_id, passwordsalt, true
 }
 
@@ -93,7 +93,7 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	
+
 	// Set output
 	c := http.Cookie { Name: "sessionId", Value: session_id }
 	http.SetCookie(w, &c)
@@ -105,7 +105,7 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 func UserAuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
-	
+
 	session_id := vars["session_id"]
 	log.Print("logging out ", session_id)
 
@@ -126,7 +126,7 @@ func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	
+
 	user_id, salt, ok := UserAuth(username, password)
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -137,13 +137,12 @@ func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		panic(err)
-		return
 	}
 
 	decoder := schema.NewDecoder()
 	passwordchange_form := new(PasswordChangeForm)
 	err = decoder.Decode(passwordchange_form, r.PostForm)
-		
+
 	if err != nil || passwordchange_form.New_password == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -159,7 +158,7 @@ func UserAuthPasswordChangeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newpasswordhash :=  utils.SHA1(salt + newpassword)
-	
+
 	// update password
 	_, err = MyDB.connection.Exec("UPDATE users SET passwordhash=$1 where id=$2",
 		                          newpasswordhash, user_id)
@@ -195,8 +194,8 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		panic(err)
-		return
 	}
+
 	decoder := schema.NewDecoder()
 	signup_form := new(SignupForm)
 	err = decoder.Decode(signup_form, r.PostForm)
@@ -217,9 +216,9 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	
+
 	passwordhash := utils.SHA1(AUTH_SALT + signup_form.Password)
-	_, err = MyDB.connection.Exec(`INSERT INTO 
+	_, err = MyDB.connection.Exec(`INSERT INTO
                                     users(username, passwordhash, passwordsalt)
                                     VALUES($1,$2,$3)`,
 		                            signup_form.Username, passwordhash, AUTH_SALT)
