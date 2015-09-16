@@ -1,10 +1,12 @@
 package main
 
 import (
-	"github.com/gorilla/websocket"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -26,19 +28,16 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-// connection is an middleman between the websocket connection and the hub.
-type connection struct {
-	// The websocket connection.
-	ws *websocket.Conn
-
-	// Buffered channel of outbound messages.
-	send chan []byte
+// Connection is an middleman between the websocket connection and the hub.
+type Connection struct {
+	ws      *websocket.Conn
+	receive chan Message // incoming used to receive messages from the hub
 }
 
-// readPump pumps messages from the websocket connection to the hub.
-func (c *connection) readPump() {
+// Sender reads messages from the websocket and sends them to the hub
+func (c *Connection) Sender() {
 	defer func() {
-		MyHub.unregister <- c
+		MyHub.ctrl <- &CtrlMessage{op: OpDisconnect, conn: c}
 		c.ws.Close()
 	}()
 	c.ws.SetReadLimit(maxMessageSize)
@@ -49,18 +48,25 @@ func (c *connection) readPump() {
 		if err != nil {
 			break
 		}
-		MyHub.broadcast <- message
+		var msg BcastMessage
+		if err := json.Unmarshal(message, &msg); err != nil {
+			log.Printf("%s", message)
+			panic(err)
+		}
+
+		log.Print(msg)
+		MyHub.data <- msg
 	}
 }
 
 // write writes a message with the given message type and payload.
-func (c *connection) write(mt int, payload []byte) error {
+func (c *Connection) write(mt int, payload []byte) error {
 	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.ws.WriteMessage(mt, payload)
 }
 
-// writePump pumps messages from the hub to the websocket connection.
-func (c *connection) writePump() {
+// Receiver pumps messages from the hub to the websocket connection.
+func (c *Connection) Receiver() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -68,12 +74,13 @@ func (c *connection) writePump() {
 	}()
 	for {
 		select {
-		case message, ok := <-c.send:
+		case message, ok := <-c.receive:
 			if !ok {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			if err := c.write(websocket.TextMessage, message); err != nil {
+			msgStr, _ := json.Marshal(message)
+			if err := c.write(websocket.TextMessage, msgStr); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -84,19 +91,41 @@ func (c *connection) writePump() {
 	}
 }
 
-// serverWs handles websocket requests from the peer.
-func serveWs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", 405)
-		return
-	}
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	c := &connection{send: make(chan []byte, 256), ws: ws}
-	MyHub.register <- c
-	go c.writePump()
-	c.readPump()
+// Configuration description
+type Configuration struct {
+	SessionID   string
+	RecipientID int
 }
+
+// serverWs handles websocket requests from the peer.
+var serveWs = SessionRequired(
+	func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		/*
+			var config Configuration
+			err = ws.ReadJSON(&config)
+			log.Print("config=", config)
+		*/
+
+		// Get User ID
+		UserID := 12333
+		// Create Connection
+		c := &Connection{ws: ws, receive: make(chan Message, 256)}
+		ctrlmsg := &CtrlMessage{op: OpConnect, id: UserID, conn: c}
+		MyHub.ctrl <- ctrlmsg
+		// Spawn goroutine for the receiver
+		go c.Receiver()
+
+		// sender
+		c.Sender()
+	},
+)

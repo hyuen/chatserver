@@ -230,6 +230,7 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SessionRequired(f http.HandlerFunc) http.HandlerFunc {
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		f(w, r)
 	}

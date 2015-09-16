@@ -1,16 +1,17 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    _ "github.com/lib/pq"
+	"database/sql"
+	"fmt"
 	"log"
+
+	_ "github.com/lib/pq"
 )
 
 const (
-    DB_USER     = "dbuser"
-    //DB_PASSWORD = ""
-    DB_NAME     = "testdb"
+	DbUser = "dbuser"
+	//DB_PASSWORD = ""
+	DbName = "testdb"
 )
 
 type DB struct {
@@ -19,22 +20,20 @@ type DB struct {
 
 func (db *DB) connect() {
 	dbinfo := fmt.Sprintf("user=%s dbname=%s sslmode=disable",
-        DB_USER, DB_NAME)
+		DbUser, DbName)
 
 	var err error
 
 	db.connection, err = sql.Open("postgres", dbinfo)
-    checkErr(err)
+	checkErr(err)
 
-	log.Printf("Connected to database %s", DB_NAME)
+	log.Printf("Connected to database %s", DbName)
 }
 
 func checkErr(err error) {
-    if err != nil {
-        panic(err)
-    }
+	if err != nil {
+		panic(err)
+	}
 }
 
-var MyDB = DB {
-
-}
+var MyDB = DB{}

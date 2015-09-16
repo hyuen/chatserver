@@ -4,42 +4,50 @@ package main
 // connections.
 type hub struct {
 	// Registered connections.
-	connections map[*connection]bool
+	connections map[int]*Connection
 
 	// Inbound messages from the connections.
-	broadcast chan []byte
-
-	// Register requests from the connections.
-	register chan *connection
-
-	// Unregister requests from connections.
-	unregister chan *connection
+	data chan BcastMessage
+	ctrl chan *CtrlMessage
 }
 
+// Myhub is the global variable for a hub
 var MyHub = hub{
-	broadcast:   make(chan []byte),
-	register:    make(chan *connection),
-	unregister:  make(chan *connection),
-	connections: make(map[*connection]bool),
+	// state
+	connections: make(map[int]*Connection),
+
+	// incoming channels
+	data: make(chan BcastMessage),
+	ctrl: make(chan *CtrlMessage),
 }
 
 func (h *hub) run() {
 	for {
 		select {
-		case c := <-h.register:
-			h.connections[c] = true
-		case c := <-h.unregister:
-			if _, ok := h.connections[c]; ok {
-				delete(h.connections, c)
-				close(c.send)
+		case m := <-h.ctrl:
+			switch m.op {
+			case OpConnect:
+				h.connections[m.id] = m.conn
+			case OpDisconnect:
+				if _, ok := h.connections[m.id]; ok {
+					delete(h.connections, m.id)
+					close(m.conn.receive)
+				}
 			}
-		case m := <-h.broadcast:
-			for c := range h.connections {
-				select {
-				case c.send <- m:
-				default:
-					close(c.send)
-					delete(h.connections, c)
+		case m := <-h.data:
+			for _, RecipientID := range m.RecipientIDs {
+				// Find a connection and place the message in the queue
+				if RecipientID == m.SenderID {
+					continue
+				}
+				if conn, ok := h.connections[RecipientID]; ok {
+					dstmsg := Message{Content: m.Content,
+						ConversationID: m.ConversationID,
+						SenderID:       m.SenderID}
+					conn.receive <- dstmsg
+				} else {
+					// save for later
+
 				}
 			}
 		}
