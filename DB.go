@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 
 	_ "github.com/lib/pq"
 )
@@ -26,8 +25,10 @@ func (db *DB) connect() {
 
 	db.connection, err = sql.Open("postgres", dbinfo)
 	checkErr(err)
+	err = db.connection.Ping()
+	checkErr(err)
 
-	log.Printf("Connected to database %s", DbName)
+	log.Info("Connected to database %s", DbName)
 }
 
 func checkErr(err error) {

@@ -2,10 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,30 +32,44 @@ var upgrader = websocket.Upgrader{
 // Connection is an middleman between the websocket connection and the hub.
 type Connection struct {
 	ws      *websocket.Conn
+	id      int
 	receive chan Message // incoming used to receive messages from the hub
 }
 
 // Sender reads messages from the websocket and sends them to the hub
 func (c *Connection) Sender() {
 	defer func() {
+		log.Info("deleting connection")
 		MyHub.ctrl <- &CtrlMessage{op: OpDisconnect, conn: c}
 		c.ws.Close()
 	}()
 	c.ws.SetReadLimit(maxMessageSize)
-	c.ws.SetReadDeadline(time.Now().Add(pongWait))
+	//c.ws.SetReadDeadline(time.Now().Add(pongWait))
 	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
 		_, message, err := c.ws.ReadMessage()
 		if err != nil {
+			log.Error("error reading message: %v", err)
 			break
 		}
+		numreqs++
+		log.Debug("%d", numreqs)
+		/*if numreqs > 100000 {
+			pprof.StopCPUProfile()
+			os.Exit(0)
+		}*/
 		var msg BcastMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("%s", message)
+			log.Error("error parsing: %s", message)
 			panic(err)
 		}
 
-		log.Print(msg)
+		if !SessionValid(msg.SenderID, msg.AuthToken) {
+			log.Info("invalid session, breaking")
+			break
+		}
+
+		log.Debug("%s", msg)
 		MyHub.data <- msg
 	}
 }
@@ -80,6 +95,7 @@ func (c *Connection) Receiver() {
 				return
 			}
 			msgStr, _ := json.Marshal(message)
+			log.Debug("received %s", msgStr)
 			if err := c.write(websocket.TextMessage, msgStr); err != nil {
 				return
 			}
@@ -97,35 +113,42 @@ type Configuration struct {
 	RecipientID int
 }
 
+var numreqs int
+
 // serverWs handles websocket requests from the peer.
-var serveWs = SessionRequired(
-	func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" {
-			http.Error(w, "Method not allowed", 405)
-			return
-		}
+//var serveWs = SessionRequired(
+func serveWs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
 
-		ws, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		/*
-			var config Configuration
-			err = ws.ReadJSON(&config)
-			log.Print("config=", config)
-		*/
+	vars := mux.Vars(r)
+	sUserID, ok := vars["user_id"]
+	if !ok {
+		http.Error(w, "Invalid url", 405)
+		return
+	}
 
-		// Get User ID
-		UserID := 12333
-		// Create Connection
-		c := &Connection{ws: ws, receive: make(chan Message, 256)}
-		ctrlmsg := &CtrlMessage{op: OpConnect, id: UserID, conn: c}
-		MyHub.ctrl <- ctrlmsg
-		// Spawn goroutine for the receiver
-		go c.Receiver()
+	userID, err := strconv.Atoi(sUserID)
+	if err != nil {
+		http.Error(w, "Invalid url", 405)
+		return
+	}
 
-		// sender
-		c.Sender()
-	},
-)
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Error("%v", err)
+		return
+	}
+	log.Info("creating connection for %d", userID)
+	// Create Connection
+	c := &Connection{ws: ws, id: userID, receive: make(chan Message, 256)}
+	ctrlmsg := &CtrlMessage{op: OpConnect, conn: c}
+	MyHub.ctrl <- ctrlmsg
+	// Spawn goroutine for the receiver
+	go c.Receiver()
+
+	// sender
+	c.Sender()
+}

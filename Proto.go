@@ -9,6 +9,7 @@ type Message struct {
 	Content        string `json:"content"`
 	ConversationID int    `json:"conversationID"`
 	SenderID       int    `json:"senderID"`
+	AuthToken      string `json:"authToken"`
 }
 
 // BcastMessage with recipients, used to send to the hub
@@ -33,6 +34,5 @@ const (
 // CtrlMessage to the hub
 type CtrlMessage struct {
 	op   ControlOp
-	id   int
 	conn *Connection
 }

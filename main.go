@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"log"
 	"net/http"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"text/template"
 
 	"github.com/gorilla/mux"
@@ -44,14 +45,31 @@ var routes = Routes{
 }
 
 func main() {
+	SetupLogging()
 	flag.Parse()
+
+	// Profiling
+	var cpuprofile = flag.String("cpuprofile", "1.prof", "write cpu profile to file")
+	f, err := os.Create(*cpuprofile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pprof.StartCPUProfile(f)
+
+	// Set # of CPUs
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	//runtime.LockOSThread()
+
+	// Caching
+	//me := "http://127.0.0.1"
+	//peers := groupcache.NewHTTPPool(me)
 
 	router := mux.NewRouter().StrictSlash(true)
 	go MyHub.run()
 	go MyDB.connect()
 
 	router.HandleFunc("/", serveHome)
-	router.HandleFunc("/ws", serveWs)
+	router.HandleFunc("/ws/{user_id}", serveWs)
 
 	for _, route := range routes {
 		router.
@@ -61,8 +79,8 @@ func main() {
 			Handler(route.HandlerFunc)
 	}
 
-	err := http.ListenAndServe(":"+os.Getenv("PORT"), router)
+	err = http.ListenAndServe(":"+os.Getenv("PORT"), router)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Info("ListenAndServe: ", err)
 	}
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -45,20 +44,20 @@ func UserAuth(username string, password string) (int, string, bool) {
 
 	err := row.Scan(&userID, &passwordHash, &passwordSalt, &isDisabled)
 	if err != nil {
-		log.Print("Unknown login or password for ", username)
+		log.Info("Unknown login or password for %s", username)
 		return -1, "", false
 	}
 
 	if isDisabled {
-		log.Printf("Username %s is disabled", username)
+		log.Info("Username %s is disabled", username)
 		return -1, "", false
 	}
 
 	calculatedPasswordHash := utils.SHA1(passwordSalt + password)
-	//log.Printf("calculated hash %s", calculated_passwordhash)
+	log.Debug("calculated hash %s", calculatedPasswordHash)
 
 	if calculatedPasswordHash != passwordHash {
-		log.Printf("Invalid password")
+		log.Info("Invalid password")
 		return -1, "", false
 	}
 
@@ -99,7 +98,7 @@ func UserAuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	c := http.Cookie{Name: "sessionId", Value: sessionID}
 	http.SetCookie(w, &c)
 
-	log.Printf("Login successful for user:%s user_id:%d", username, userID)
+	log.Info("Login successful for user:%s user_id:%d", username, userID)
 }
 
 // log the user's session out of the system, do not check if the session is valid
@@ -108,7 +107,7 @@ func UserAuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	sessionID := vars["session_id"]
-	log.Print("logging out ", sessionID)
+	log.Info("Logging out session %s", sessionID)
 
 	_, err := MyDB.connection.Exec("delete from usersessions where sessionkey = $1", sessionID)
 	if err != nil {
@@ -202,7 +201,6 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 	err = decoder.Decode(signupForm, r.PostForm)
 
 	if err != nil || !signupForm.validate() {
-		//log.Print(err, signup_form, signup_form.Username)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -213,7 +211,7 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 		signupForm.Username).Scan(&id)
 
 	if err == nil {
-		log.Print("User ", signupForm.Username, " already exists")
+		log.Info("User %s already exists", signupForm.Username)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -226,12 +224,23 @@ func UserAuthSignupHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("Created user %s", signupForm.Username)
+	log.Info("Created user %s", signupForm.Username)
 }
 
 func SessionRequired(f http.HandlerFunc) http.HandlerFunc {
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		f(w, r)
 	}
+}
+
+func SessionValid(user_id int, session_key string) bool {
+	var id int
+	// Need a cache
+	err := MyDB.connection.QueryRow(`SELECT 1 FROM usersessions
+                                     WHERE sessionkey = $1 and user_id = $2`,
+		session_key, user_id).Scan(&id)
+	if err != nil {
+		return false
+	}
+	return true
 }
