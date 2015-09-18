@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
+	"os"
 
 	_ "github.com/lib/pq"
 )
@@ -22,8 +22,9 @@ type DB struct {
 }
 
 func (db *DB) connect() {
-	dbinfo := fmt.Sprintf("user=%s dbname=%s password=%s sslmode=disable",
-		DbUser, DbName, DbPassword)
+	dbinfo := os.Getenv("DATABASE_URL")
+	//fmt.Sprintf("user=%s dbname=%s password=%s sslmode=disable",
+	//	DbUser, DbName, DbPassword)
 
 	var err error
 
