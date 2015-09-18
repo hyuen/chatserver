@@ -8,9 +8,14 @@ import (
 )
 
 const (
-	DbUser = "dbuser"
+//	DbUser = "dbuser"
 	//DB_PASSWORD = ""
-	DbName = "testdb"
+//	DbName = "testdb"
+
+	DbUser = "root"
+	DbPassword = "SCUubLc8dhRS2Qt4"
+	DbName = "db"
+)
 )
 
 type DB struct {
@@ -18,8 +23,8 @@ type DB struct {
 }
 
 func (db *DB) connect() {
-	dbinfo := fmt.Sprintf("user=%s dbname=%s sslmode=disable",
-		DbUser, DbName)
+	dbinfo := fmt.Sprintf("user=%s dbname=%s password=%s sslmode=disable",
+		DbUser, DbName, DbPassword)
 
 	var err error
 
