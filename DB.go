@@ -8,14 +8,13 @@ import (
 )
 
 const (
-//	DbUser = "dbuser"
+	//	DbUser = "dbuser"
 	//DB_PASSWORD = ""
-//	DbName = "testdb"
+	//	DbName = "testdb"
 
-	DbUser = "root"
+	DbUser     = "root"
 	DbPassword = "SCUubLc8dhRS2Qt4"
-	DbName = "db"
-)
+	DbName     = "db"
 )
 
 type DB struct {
