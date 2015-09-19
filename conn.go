@@ -64,10 +64,10 @@ func (c *Connection) Sender() {
 			panic(err)
 		}
 
-		/*if !SessionValid(msg.SenderID, msg.AuthToken) {
+		if !SessionValid(msg.SenderID, msg.AuthToken) {
 			log.Info("invalid session, breaking")
 			break
-		}*/
+		}
 
 		log.Debug("%s", msg)
 		MyHub.data <- msg
