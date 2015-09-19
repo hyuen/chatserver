@@ -63,11 +63,11 @@ func (c *Connection) Sender() {
 			log.Error("error parsing: %s", message)
 			panic(err)
 		}
-
-		if !SessionValid(msg.SenderID, msg.AuthToken) {
-			log.Info("invalid session, breaking")
-			break
-		}
+		/*
+			if !SessionValid(msg.SenderID, msg.AuthToken) {
+				log.Info("invalid session, breaking")
+				break
+			}*/
 
 		log.Debug("%s", msg)
 		MyHub.data <- msg
