@@ -30,8 +30,8 @@ func (db *DB) connect() {
 
 	db.connection, err = sql.Open("postgres", dbinfo)
 	checkErr(err)
-	//err = db.connection.Ping()
-	//checkErr(err)
+	err = db.connection.Ping()
+	checkErr(err)
 
 	log.Info("Connected to database %s", DbName)
 }
